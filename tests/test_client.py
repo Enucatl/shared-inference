@@ -158,7 +158,10 @@ async def test_tracing_records_each_operation_and_full_payloads() -> None:
     )
 
     await client.complete(
-        model="chat-model", messages=[], domain="browser_copilot", temperature=0
+        model="chat-model",
+        messages=[{"role": "user", "content": "hello"}],
+        domain="browser_copilot",
+        temperature=0,
     )
     await client.embed(
         model="embedding-model", input=["safe text"], domain="ingest_embedding"
@@ -181,7 +184,20 @@ async def test_tracing_records_each_operation_and_full_payloads() -> None:
         "ingest_embedding",
         "recall_rerank",
     ]
-    assert '"messages":[]' in spans[0].attributes["llm.request"]
+    assert (
+        '"messages":[{"role":"user","content":"hello"}]'
+        in spans[0].attributes["llm.request"]
+    )
     assert '"input":["safe text"]' in spans[1].attributes["llm.request"]
     assert '"documents":["safe document"]' in spans[2].attributes["llm.request"]
     assert '"content":"ok"' in spans[0].attributes["llm.response"]
+    assert spans[0].attributes["openinference.span.kind"] == "LLM"
+    assert spans[0].attributes["input.mime_type"] == "application/json"
+    assert spans[0].attributes["output.mime_type"] == "application/json"
+    assert spans[0].attributes["llm.input_messages.0.message.role"] == "user"
+    assert spans[0].attributes["llm.input_messages.0.message.content"] == "hello"
+    assert spans[0].attributes["llm.output_messages.0.message.content"] == "ok"
+    assert spans[1].attributes["openinference.span.kind"] == "EMBEDDING"
+    assert spans[1].attributes["embedding.text.0"] == "safe text"
+    assert spans[2].attributes["openinference.span.kind"] == "RERANKER"
+    assert spans[2].attributes["reranker.query"] == "safe query"
