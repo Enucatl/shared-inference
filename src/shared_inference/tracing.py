@@ -43,6 +43,9 @@ def llm_span(
         except Exception as exc:
             span.set_attribute("llm.error", str(exc))
             span.record_exception(exc)
+            from opentelemetry.trace import Status, StatusCode
+
+            span.set_status(Status(StatusCode.ERROR, str(exc)))
             raise
         finally:
             span.set_attribute("llm.latency_ms", (perf_counter() - started) * 1000)
