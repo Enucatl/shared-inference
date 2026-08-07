@@ -1,14 +1,24 @@
+import json
 from collections.abc import Iterator
 from contextlib import contextmanager
 from time import perf_counter
 from typing import Any
 
 
+def _serialize(value: Any) -> str:
+    return json.dumps(value, ensure_ascii=False, default=str, separators=(",", ":"))
+
+
 @contextmanager
 def llm_span(
-    operation: str, *, domain: str, provider: str, model: str
+    operation: str,
+    *,
+    domain: str,
+    provider: str,
+    model: str,
+    request: Any = None,
 ) -> Iterator[Any]:
-    """Create a privacy-safe LLM span; the API is a no-op without an SDK/provider."""
+    """Create a full-fidelity LLM span when an SDK/provider is configured."""
     try:
         from opentelemetry import trace
 
@@ -25,15 +35,22 @@ def llm_span(
             "llm.provider": provider,
             "llm.model": model,
             "llm.operation": operation.removeprefix("llm."),
+            "llm.request": _serialize(request),
         }.items():
             span.set_attribute(key, value)
         try:
             yield span
+        except Exception as exc:
+            span.set_attribute("llm.error", str(exc))
+            span.record_exception(exc)
+            raise
         finally:
             span.set_attribute("llm.latency_ms", (perf_counter() - started) * 1000)
 
 
-def record_result(span: Any, *, usage: Any, request_id: str | None) -> None:
+def record_result(
+    span: Any, *, usage: Any, request_id: str | None, response: Any = None
+) -> None:
     if span is None:
         return
     for key, value in {
@@ -41,6 +58,7 @@ def record_result(span: Any, *, usage: Any, request_id: str | None) -> None:
         "llm.usage.prompt_tokens": usage.prompt_tokens,
         "llm.usage.completion_tokens": usage.completion_tokens,
         "llm.usage.total_tokens": usage.total_tokens,
+        "llm.response": _serialize(response),
     }.items():
         if value is not None:
             span.set_attribute(key, value)

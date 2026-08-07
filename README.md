@@ -1,7 +1,7 @@
 # shared-inference
 
 A small async client for OpenAI-compatible inference services. It uses
-`niquests` for HTTP and `opentelemetry-api` for optional, privacy-safe LLM
+`niquests` for HTTP and `opentelemetry-api` for optional full-fidelity LLM
 spans; it does not depend on provider SDKs or an LLM framework.
 
 ## API
@@ -43,8 +43,12 @@ local embeddings server. The client appends `/chat/completions`,
 The client creates `llm.complete`, `llm.embed`, and `llm.rerank` spans through
 OpenTelemetry when an application has configured a tracer provider. Without a
 provider, tracing is a no-op. Spans contain operation, domain, provider,
-model, latency, usage, request ID, and error/status metadata; prompts,
-documents, images, and API keys are not recorded.
+model, latency, usage, request ID, error/status metadata, and serialized
+`llm.request` and `llm.response` attributes. Requests and responses therefore
+include prompts, documents, tool arguments, reasoning, and multimodal image
+payloads. API keys are only sent as HTTP headers and are never included in
+these attributes. This tracing mode is intentionally sensitive and should only
+be enabled where the configured exporter and retention policy permit it.
 
 ## Development
 

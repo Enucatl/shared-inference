@@ -137,18 +137,51 @@ async def test_timeout_is_normalized() -> None:
         )
 
 
-def test_tracing_records_safe_operation_metadata() -> None:
+@pytest.mark.asyncio
+async def test_tracing_records_each_operation_and_full_payloads() -> None:
     provider = TracerProvider()
     exporter = InMemorySpanExporter()
     provider.add_span_processor(SimpleSpanProcessor(exporter))
     trace.set_tracer_provider(provider)
-    # The client tests use a mocked response; this test validates the span helper
-    # independently without putting prompts or documents into attributes.
-    from shared_inference.tracing import llm_span
+    responses = []
+    for body in (
+        {"choices": [{"message": {"content": "ok"}}]},
+        {"data": [{"embedding": [1.0]}]},
+        {"results": [{"index": 0, "relevance_score": 0.9}]},
+    ):
+        response = Mock(ok=True, status_code=200, headers={})
+        response.json.return_value = body
+        responses.append(response)
+    session = Mock(post=AsyncMock(side_effect=responses))
+    client = InferenceClient(
+        base_url="http://local/v1", provider="local", domain="default", session=session
+    )
 
-    with llm_span("llm.complete", domain="test", provider="local", model="m"):
-        pass
-    span = exporter.get_finished_spans()[-1]
-    assert span.name == "llm.complete"
-    assert span.attributes["llm.domain"] == "test"
-    assert "prompt" not in " ".join(span.attributes)
+    await client.complete(
+        model="chat-model", messages=[], domain="browser_copilot", temperature=0
+    )
+    await client.embed(
+        model="embedding-model", input=["safe text"], domain="ingest_embedding"
+    )
+    await client.rerank(
+        model="rerank-model",
+        query="safe query",
+        documents=["safe document"],
+        domain="recall_rerank",
+    )
+
+    spans = exporter.get_finished_spans()
+    assert [span.name for span in spans] == [
+        "llm.complete",
+        "llm.embed",
+        "llm.rerank",
+    ]
+    assert [span.attributes["llm.domain"] for span in spans] == [
+        "browser_copilot",
+        "ingest_embedding",
+        "recall_rerank",
+    ]
+    assert '"messages":[]' in spans[0].attributes["llm.request"]
+    assert '"input":["safe text"]' in spans[1].attributes["llm.request"]
+    assert '"documents":["safe document"]' in spans[2].attributes["llm.request"]
+    assert '"content":"ok"' in spans[0].attributes["llm.response"]

@@ -7,6 +7,13 @@ from .models import CompletionResult, EmbeddingResult, RerankResult, Usage
 from .tracing import llm_span, record_result
 
 
+def _normalize_model(model: str, provider: str) -> str:
+    """Remove the legacy local ``openai/`` transport prefix only."""
+    if provider != "openrouter" and model.startswith("openai/"):
+        return model.removeprefix("openai/")
+    return model
+
+
 class InferenceClient:
     """One long-lived async client for OpenAI-compatible inference endpoints."""
 
@@ -28,18 +35,33 @@ class InferenceClient:
         self.session = session or niquests.AsyncSession(timeout=timeout)
 
     async def complete(
-        self, *, model: str, messages: list[dict[str, Any]], **kwargs: Any
+        self,
+        *,
+        model: str,
+        messages: list[dict[str, Any]],
+        domain: str | None = None,
+        **kwargs: Any,
     ) -> CompletionResult:
+        model = _normalize_model(model, self.provider)
         return await self._complete(
-            "/chat/completions", model=model, messages=messages, **kwargs
+            "/chat/completions",
+            model=model,
+            messages=messages,
+            domain=domain,
+            **kwargs,
         )
 
     async def embed(
-        self, *, model: str, input: list[str], **kwargs: Any
+        self, *, model: str, input: list[str], domain: str | None = None, **kwargs: Any
     ) -> EmbeddingResult:
+        model = _normalize_model(model, self.provider)
         payload = {"model": model, "input": input, **kwargs}
         with llm_span(
-            "llm.embed", domain=self.domain, provider=self.provider, model=model
+            "llm.embed",
+            domain=domain or self.domain,
+            provider=self.provider,
+            model=model,
+            request=payload,
         ) as span:
             raw, request_id = await self._post("/embeddings", payload)
             usage = _usage(raw.get("usage"))
@@ -55,15 +77,26 @@ class InferenceClient:
                 request_id=request_id,
                 raw=raw,
             )
-            record_result(span, usage=usage, request_id=request_id)
+            record_result(span, usage=usage, request_id=request_id, response=raw)
             return result
 
     async def rerank(
-        self, *, model: str, query: str, documents: list[str], **kwargs: Any
+        self,
+        *,
+        model: str,
+        query: str,
+        documents: list[str],
+        domain: str | None = None,
+        **kwargs: Any,
     ) -> RerankResult:
+        model = _normalize_model(model, self.provider)
         payload = {"model": model, "query": query, "documents": documents, **kwargs}
         with llm_span(
-            "llm.rerank", domain=self.domain, provider=self.provider, model=model
+            "llm.rerank",
+            domain=domain or self.domain,
+            provider=self.provider,
+            model=model,
+            request=payload,
         ) as span:
             raw, request_id = await self._post("/rerank", payload)
             results = raw.get("results", [])
@@ -78,15 +111,25 @@ class InferenceClient:
                 request_id=request_id,
                 raw=raw,
             )
-            record_result(span, usage=usage, request_id=request_id)
+            record_result(span, usage=usage, request_id=request_id, response=raw)
             return result
 
     async def _complete(
-        self, path: str, *, model: str, messages: list[dict[str, Any]], **kwargs: Any
+        self,
+        path: str,
+        *,
+        model: str,
+        messages: list[dict[str, Any]],
+        domain: str | None = None,
+        **kwargs: Any,
     ) -> CompletionResult:
         payload = {"model": model, "messages": messages, **kwargs}
         with llm_span(
-            "llm.complete", domain=self.domain, provider=self.provider, model=model
+            "llm.complete",
+            domain=domain or self.domain,
+            provider=self.provider,
+            model=model,
+            request=payload,
         ) as span:
             raw, request_id = await self._post(path, payload)
             choice = (raw.get("choices") or [{}])[0]
@@ -101,7 +144,7 @@ class InferenceClient:
                 request_id=request_id,
                 raw=raw,
             )
-            record_result(span, usage=usage, request_id=request_id)
+            record_result(span, usage=usage, request_id=request_id, response=raw)
             return result
 
     async def _post(
