@@ -110,7 +110,12 @@ def llm_span(
 
 
 def record_result(
-    span: Any, *, usage: Any, request_id: str | None, response: Any = None
+    span: Any,
+    *,
+    usage: Any,
+    request_id: str | None,
+    response: Any = None,
+    request: Any = None,
 ) -> None:
     if span is None:
         return
@@ -139,7 +144,19 @@ def record_result(
             _set_message_attributes(span, "output", [message])
         data = response.get("data") or []
         if data:
-            span.set_attribute("embedding.embeddings", _serialize(data))
+            inputs = request.get("input", []) if isinstance(request, dict) else []
+            if not isinstance(inputs, list):
+                inputs = [inputs]
+            embeddings = []
+            for index, item in enumerate(data):
+                vector = item.get("embedding") if isinstance(item, dict) else item
+                embeddings.append(
+                    {
+                        "text": inputs[index] if index < len(inputs) else None,
+                        "vector": vector,
+                    }
+                )
+            span.set_attribute("embedding.embeddings", _serialize(embeddings))
         if response.get("results") is not None:
             span.set_attribute(
                 "reranker.output_documents", _serialize(response["results"])

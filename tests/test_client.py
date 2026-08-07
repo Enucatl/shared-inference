@@ -1,3 +1,4 @@
+import json
 from unittest.mock import AsyncMock, Mock
 
 import niquests
@@ -199,5 +200,8 @@ async def test_tracing_records_each_operation_and_full_payloads() -> None:
     assert spans[0].attributes["llm.output_messages.0.message.content"] == "ok"
     assert spans[1].attributes["openinference.span.kind"] == "EMBEDDING"
     assert spans[1].attributes["embedding.text.0"] == "safe text"
+    assert json.loads(spans[1].attributes["embedding.embeddings"]) == [
+        {"text": "safe text", "vector": [1.0]}
+    ]
     assert spans[2].attributes["openinference.span.kind"] == "RERANKER"
     assert spans[2].attributes["reranker.query"] == "safe query"
