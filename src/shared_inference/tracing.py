@@ -37,6 +37,32 @@ def _set_message_attributes(span: Any, prefix: str, messages: Any) -> None:
             )
 
 
+def _document_attributes(documents: Any) -> list[dict[str, Any]]:
+    if not isinstance(documents, list):
+        return []
+    normalized = []
+    for index, document in enumerate(documents):
+        if isinstance(document, dict):
+            value = dict(document)
+            if "content" in value:
+                value["document.content"] = value.pop("content")
+            if "id" in value:
+                value["document.id"] = value.pop("id")
+            if "score" in value:
+                value["document.score"] = value.pop("score")
+            normalized.append(value)
+        else:
+            normalized.append({"document.id": index, "document.content": document})
+    return normalized
+
+
+def _set_document_attributes(span: Any, prefix: str, documents: Any) -> None:
+    for index, document in enumerate(_document_attributes(documents)):
+        for field, value in document.items():
+            if value is not None:
+                span.set_attribute(f"{prefix}.{index}.{field}", value)
+
+
 @contextmanager
 def llm_span(
     operation: str,
@@ -93,8 +119,8 @@ def llm_span(
             span.set_attribute("reranker.model_name", model)
             if request.get("query") is not None:
                 span.set_attribute("reranker.query", request["query"])
-            span.set_attribute(
-                "reranker.input_documents", _serialize(request.get("documents", []))
+            _set_document_attributes(
+                span, "reranker.input_documents", request.get("documents", [])
             )
         try:
             yield span
@@ -147,17 +173,41 @@ def record_result(
             inputs = request.get("input", []) if isinstance(request, dict) else []
             if not isinstance(inputs, list):
                 inputs = [inputs]
-            embeddings = []
             for index, item in enumerate(data):
                 vector = item.get("embedding") if isinstance(item, dict) else item
-                embeddings.append(
-                    {
-                        "text": inputs[index] if index < len(inputs) else None,
-                        "vector": vector,
-                    }
-                )
-            span.set_attribute("embedding.embeddings", _serialize(embeddings))
+                text = inputs[index] if index < len(inputs) else None
+                if text is not None:
+                    span.set_attribute(
+                        f"embedding.embeddings.{index}.embedding.text", text
+                    )
+                if vector is not None:
+                    span.set_attribute(
+                        f"embedding.embeddings.{index}.embedding.vector", vector
+                    )
         if response.get("results") is not None:
-            span.set_attribute(
-                "reranker.output_documents", _serialize(response["results"])
+            results = response["results"]
+            documents = (
+                request.get("documents", []) if isinstance(request, dict) else []
+            )
+            output_documents = []
+            for result in results:
+                if not isinstance(result, dict):
+                    continue
+                index = result.get("index")
+                document = (
+                    documents[index]
+                    if isinstance(index, int) and index < len(documents)
+                    else None
+                )
+                output = {
+                    "document.id": index,
+                    "document.score": result.get(
+                        "relevance_score", result.get("score")
+                    ),
+                }
+                if document is not None:
+                    output["document.content"] = document
+                output_documents.append(output)
+            _set_document_attributes(
+                span, "reranker.output_documents", output_documents
             )

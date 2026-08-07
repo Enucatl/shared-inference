@@ -117,7 +117,13 @@ class InferenceClient:
                 request_id=request_id,
                 raw=raw,
             )
-            record_result(span, usage=usage, request_id=request_id, response=raw)
+            record_result(
+                span,
+                usage=usage,
+                request_id=request_id,
+                response=raw,
+                request=payload,
+            )
             return result
 
     async def _complete(
