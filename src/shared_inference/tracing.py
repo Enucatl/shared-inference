@@ -145,11 +145,14 @@ def record_result(
 ) -> None:
     if span is None:
         return
+    usage_raw = getattr(usage, "raw", None)
+    cost = usage_raw.get("cost") if isinstance(usage_raw, dict) else None
     for key, value in {
         "llm.request_id": request_id,
         "llm.usage.prompt_tokens": usage.prompt_tokens,
         "llm.usage.completion_tokens": usage.completion_tokens,
         "llm.usage.total_tokens": usage.total_tokens,
+        "llm.usage.cost": cost,
         "llm.token_count.prompt": usage.prompt_tokens,
         "llm.token_count.completion": usage.completion_tokens,
         "llm.token_count.total": usage.total_tokens,

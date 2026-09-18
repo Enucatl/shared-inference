@@ -145,7 +145,10 @@ async def test_tracing_records_each_operation_and_full_payloads() -> None:
     trace.set_tracer_provider(provider)
     responses = []
     for body in (
-        {"choices": [{"message": {"content": "ok"}}]},
+        {
+            "choices": [{"message": {"content": "ok"}}],
+            "usage": {"total_tokens": 4, "cost": 0.00125},
+        },
         {"data": [{"embedding": [1.0]}]},
         {"results": [{"index": 0, "relevance_score": 0.9}]},
     ):
@@ -191,6 +194,7 @@ async def test_tracing_records_each_operation_and_full_payloads() -> None:
     assert '"input":["safe text"]' in spans[1].attributes["llm.request"]
     assert '"documents":["safe document"]' in spans[2].attributes["llm.request"]
     assert '"content":"ok"' in spans[0].attributes["llm.response"]
+    assert spans[0].attributes["llm.usage.cost"] == 0.00125
     assert spans[0].attributes["openinference.span.kind"] == "LLM"
     assert spans[0].attributes["input.mime_type"] == "application/json"
     assert spans[0].attributes["output.mime_type"] == "application/json"
